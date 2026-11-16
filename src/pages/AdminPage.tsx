@@ -59,6 +59,10 @@ export function AdminPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),
       });
+      if (res.status === 404) {
+        setLoginError('API is not available on this host. Redeploy with the Express /api route enabled.');
+        return;
+      }
       const json = await res.json();
       if (!res.ok) {
         setLoginError(json?.error?.message || 'Login failed');

@@ -9,8 +9,11 @@ import crypto from 'crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
-const STORE_PATH = path.join(ROOT, 'data', 'store.json');
-const PORT = Number(process.env.API_PORT || 8787);
+const IS_VERCEL = Boolean(process.env.VERCEL);
+const STORE_PATH = IS_VERCEL
+  ? path.join('/tmp', 'certificate-store.json')
+  : path.join(ROOT, 'data', 'store.json');
+const PORT = Number(process.env.API_PORT || process.env.PORT || 8787);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'RCE_T&P';
 const ADMIN_TOKEN_SECRET = process.env.ADMIN_TOKEN_SECRET || 'race-to-create-admin-secret';
 
@@ -93,7 +96,6 @@ function verifyAdminToken(token) {
     if (sig !== expected) return false;
     const ts = Number(payload.split(':')[1]);
     if (!Number.isFinite(ts)) return false;
-    // Token valid for 12 hours
     return Date.now() - ts < 12 * 60 * 60 * 1000;
   } catch {
     return false;
@@ -172,12 +174,10 @@ app.post('/api/admin/emails/upload', requireAdmin, upload.single('file'), (req, 
         ['email', 'email address', 'e-mail', 'mail', 'registered email'].includes(h),
       ) || null;
 
-    // Support headerless single-column files
     let extracted = [];
     if (emailHeader) {
       extracted = rows.map((row) => normalizeEmail(row[emailHeader]));
     } else {
-      // fallback: first column values
       extracted = text
         .split(/\r?\n/)
         .map((line) => normalizeEmail(line.split(',')[0]))
@@ -259,11 +259,6 @@ app.post('/api/admin/emails', requireAdmin, (req, res) => {
   });
 });
 
-/**
- * Public certificate claim:
- * - email must be approved
- * - email can be used only once
- */
 app.post('/api/certificates/issue', (req, res) => {
   try {
     const email = normalizeEmail(req.body?.email);
@@ -307,7 +302,6 @@ app.post('/api/certificates/issue', (req, res) => {
       });
     }
 
-    // Atomic claim in single-threaded process: re-check then write
     store.issued[email] = {
       fullName,
       email,
@@ -332,8 +326,22 @@ app.post('/api/certificates/issue', (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  ensureStore();
-  console.log(`Certificate API running on http://localhost:${PORT}`);
-  console.log(`Admin login ready (password from ADMIN_PASSWORD / default)`);
-});
+// Local / Node-host production: serve the Vite build from the same process.
+const distDir = path.join(ROOT, 'dist');
+if (!IS_VERCEL && fs.existsSync(distDir)) {
+  app.use(express.static(distDir));
+  app.get(/^(?!\/api).*/, (_req, res) => {
+    res.sendFile(path.join(distDir, 'index.html'));
+  });
+}
+
+ensureStore();
+
+if (!IS_VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`Certificate API running on http://localhost:${PORT}`);
+    console.log(`Admin login ready (password from ADMIN_PASSWORD / default)`);
+  });
+}
+
+export default app;

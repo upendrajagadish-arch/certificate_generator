@@ -8,8 +8,9 @@
     "dev:web": "vite",
     "dev:api": "node server/index.mjs",
     "build": "tsc -b && vite build",
+    "start": "node server/index.mjs",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview --port 4173"
   },
   "dependencies": {
     "@pdf-lib/fontkit": "^1.1.1",
