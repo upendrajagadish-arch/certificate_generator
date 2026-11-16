@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Download, Loader2, X } from 'lucide-react';
 import { CertificatePreview } from './components/CertificatePreview';
