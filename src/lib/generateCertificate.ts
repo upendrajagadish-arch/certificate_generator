@@ -5,19 +5,40 @@ import fontkit from '@pdf-lib/fontkit';
 const TEMPLATE_WIDTH = 2048;
 const TEMPLATE_HEIGHT = 1536;
 
-/** Gold divider at 53.65% from top — name baseline sits on the line. */
-const GOLD_LINE_Y_FROM_TOP = 0.5365;
-const NAME_MAX_WIDTH_RATIO = 0.58;
-const NAME_BASE_SIZE = 108; // 54 × 2 for 2× template
+/** Gold divider densest row ~825px → 53.71% from top. */
+const GOLD_LINE_Y_FROM_TOP = 0.5371;
+/** Lift baseline above the gold line so script rests ON the line. */
+const BASELINE_NUDGE_PX = 16;
+const NAME_MAX_WIDTH_RATIO = 0.62;
+const NAME_BASE_SIZE = 124;
+const NAME_COLOR = rgb(0.04, 0.03, 0.09);
+
+/**
+ * Allura reads clearer than Great Vibes (less stroke pile-up).
+ * Keep joining features off so pdf-lib doesn't invent odd gaps/overlaps.
+ */
+const FONT_FEATURES = {
+  liga: false,
+  dlig: false,
+  clig: false,
+  calt: false,
+  curs: false,
+} as const;
 
 export function normalizeCertificateName(fullName: string): string {
-  return fullName.trim().replace(/\s+/g, ' ');
+  return fullName
+    .trim()
+    .replace(/\s+/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
 }
 
 export async function generateCertificatePdf(fullName: string): Promise<Uint8Array> {
   const [templateRes, fontRes] = await Promise.all([
     fetch('/certificate-template.jpg'),
-    fetch('/fonts/GreatVibes-Regular.ttf'),
+    fetch('/fonts/Allura-Regular.ttf'),
   ]);
 
   if (!templateRes.ok) throw new Error('Could not load certificate template');
@@ -30,7 +51,10 @@ export async function generateCertificatePdf(fullName: string): Promise<Uint8Arr
   doc.registerFontkit(fontkit);
 
   const image = await doc.embedJpg(templateBytes);
-  const font = await doc.embedFont(fontBytes, { subset: true });
+  const font = await doc.embedFont(fontBytes, {
+    subset: false,
+    features: { ...FONT_FEATURES },
+  });
 
   const pageWidth = TEMPLATE_WIDTH;
   const pageHeight = TEMPLATE_HEIGHT;
@@ -43,26 +67,25 @@ export async function generateCertificatePdf(fullName: string): Promise<Uint8Arr
     height: pageHeight,
   });
 
-  // Exact same normalized text as the soft-copy preview
   const name = normalizeCertificateName(fullName);
 
   let size = NAME_BASE_SIZE;
   const maxWidth = pageWidth * NAME_MAX_WIDTH_RATIO;
-  while (size > 44 && font.widthOfTextAtSize(name, size) > maxWidth) {
+  while (size > 52 && font.widthOfTextAtSize(name, size) > maxWidth) {
     size -= 1;
   }
 
   const textWidth = font.widthOfTextAtSize(name, size);
   const x = (pageWidth - textWidth) / 2;
-  const y = pageHeight * (1 - GOLD_LINE_Y_FROM_TOP);
+  const y = pageHeight * (1 - GOLD_LINE_Y_FROM_TOP) + BASELINE_NUDGE_PX;
 
-  // Single drawText = natural font spacing (matches preview)
+  // One natural draw — no manual tracking (that caused letter overlaps)
   page.drawText(name, {
     x,
     y,
     size,
     font,
-    color: rgb(0.12, 0.1, 0.18),
+    color: NAME_COLOR,
   });
 
   return doc.save();

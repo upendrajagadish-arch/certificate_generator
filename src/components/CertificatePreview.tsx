@@ -17,20 +17,21 @@ export function CertificatePreview({ fullName }: CertificatePreviewProps) {
         alt="Race to Create 2026 Certificate"
         className="block h-auto w-full"
       />
-      {/* Same normalized name + natural spacing as the downloaded PDF */}
       <div
-        className="pointer-events-none absolute left-1/2 w-[58%] text-center"
+        className="pointer-events-none absolute left-1/2 w-[62%] text-center"
         style={{
-          top: '53.65%',
-          transform: 'translate(-50%, -92%)',
+          top: '53.71%',
+          transform: 'translate(-50%, -87%)',
         }}
       >
         <p
-          className="leading-none text-[#1f1a2e]"
+          className="leading-none text-[#0a0817]"
           style={{
-            fontFamily: "'Great Vibes', cursive",
+            fontFamily: "'Allura', cursive",
             fontWeight: 400,
-            fontSize: '5.3cqw',
+            fontSize: '6cqw',
+            letterSpacing: 'normal',
+            fontFeatureSettings: "'liga' 0, 'clig' 0, 'calt' 0, 'dlig' 0, 'curs' 0",
             whiteSpace: 'nowrap',
           }}
         >
