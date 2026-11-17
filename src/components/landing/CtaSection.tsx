@@ -22,11 +22,22 @@ export function CtaSection({ onGetCertificate }: CtaSectionProps) {
         aria-hidden
         className="pointer-events-none absolute inset-0 h-full w-full object-cover object-center"
       />
-      <div className="absolute inset-0 bg-gradient-to-b from-black/65 via-black/45 to-[#14191E]" />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(255,255,255,0.12),transparent_55%)]" />
+      <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/50 to-[#0d1116]" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,0.08),transparent_60%)]" />
 
-      <div className="relative z-20 mx-auto flex h-full w-full max-w-[1760px] items-center px-3 pb-10 pt-3 sm:px-4 sm:pb-12 sm:pt-4 lg:px-5 lg:pb-10 lg:pt-5 xl:px-6">
-        <div className="mx-auto aspect-[16/9] w-full max-h-[52vh] max-w-none sm:max-h-[56vh] lg:max-h-[62vh] xl:max-h-[66vh]">
+      <div className="relative z-20 mx-auto flex h-full w-full max-w-[1680px] flex-col px-3 pb-8 pt-3 sm:px-5 sm:pb-10 sm:pt-4 md:px-6 md:pb-12 md:pt-5 lg:px-8 lg:pb-12 lg:pt-6">
+        {/* Ramachandra logo — outside the glass box */}
+        <div className="mb-2 flex shrink-0 sm:mb-3 md:mb-4">
+          <div className="rounded-lg bg-white px-2.5 py-2 shadow-[0_8px_30px_rgba(0,0,0,0.35)] sm:rounded-xl sm:px-3 sm:py-2.5 md:rounded-2xl md:px-4 md:py-3">
+            <img
+              src="/images/college-brand.png"
+              alt="Ramachandra College of Engineering"
+              className="h-7 w-auto max-w-[min(70vw,280px)] object-contain sm:h-9 md:h-10 lg:h-11"
+            />
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1">
           <CtaDashboardMock onBegin={onGetCertificate} />
         </div>
       </div>
@@ -35,7 +46,7 @@ export function CtaSection({ onGetCertificate }: CtaSectionProps) {
         src={GRASS_SRC}
         alt=""
         aria-hidden
-        className="pointer-events-none absolute bottom-[-6px] left-0 right-0 z-30 w-full select-none object-cover sm:bottom-[-16px] lg:bottom-[-28px]"
+        className="pointer-events-none absolute bottom-[-12px] left-0 right-0 z-30 w-full select-none object-cover sm:bottom-[-28px] md:bottom-[-40px] lg:bottom-[-60px]"
       />
     </section>
   );
