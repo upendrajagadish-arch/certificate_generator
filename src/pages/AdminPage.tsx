@@ -282,38 +282,40 @@ export function AdminPage() {
         {message && <p className="mb-3 text-sm text-emerald-300">{message}</p>}
         {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
 
-        <div className="overflow-x-auto rounded-2xl border border-white/10">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-white/5 text-[#83837D]">
-              <tr>
-                <th className="px-4 py-3 font-medium">Email</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Issued name</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.email} className="border-t border-white/10">
-                  <td className="px-4 py-3">{row.email}</td>
-                  <td className="px-4 py-3">
-                    {row.issued ? (
-                      <span className="text-amber-300">Issued</span>
-                    ) : (
-                      <span className="text-emerald-300">Eligible</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-[#C8C8C8]">{row.fullName || '—'}</td>
-                </tr>
-              ))}
-              {rows.length === 0 && (
+        <div className="overflow-hidden rounded-2xl border border-white/10">
+          <div className="max-h-[min(60vh,520px)] overflow-x-auto overflow-y-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="sticky top-0 z-10 bg-[#161616] text-[#83837D]">
                 <tr>
-                  <td colSpan={3} className="px-4 py-8 text-center text-[#83837D]">
-                    No approved emails yet. Upload a CSV to begin.
-                  </td>
+                  <th className="px-4 py-3 font-medium">Email</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Issued name</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.email} className="border-t border-white/10">
+                    <td className="px-4 py-3">{row.email}</td>
+                    <td className="px-4 py-3">
+                      {row.issued ? (
+                        <span className="text-amber-300">Issued</span>
+                      ) : (
+                        <span className="text-emerald-300">Eligible</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-[#C8C8C8]">{row.fullName || '—'}</td>
+                  </tr>
+                ))}
+                {rows.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="px-4 py-8 text-center text-[#83837D]">
+                      No approved emails yet. Upload a CSV to begin.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
