@@ -21,6 +21,7 @@ export function AdminPage() {
   const [issued, setIssued] = useState(0);
   const [remaining, setRemaining] = useState(0);
   const [rows, setRows] = useState<EmailRow[]>([]);
+  const [storage, setStorage] = useState('');
   const [manualEmail, setManualEmail] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -42,6 +43,7 @@ export function AdminPage() {
     setIssued(json.data.issued);
     setRemaining(json.data.remaining);
     setRows(json.data.emails || []);
+    setStorage(json.data.storage || '');
   }
 
   useEffect(() => {
@@ -230,6 +232,16 @@ export function AdminPage() {
             <p className="mt-2 text-3xl font-semibold">{remaining}</p>
           </div>
         </div>
+
+        {storage === 'ephemeral-tmp' && (
+          <div className="mb-6 rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
+            Emails are in temporary Vercel memory and will disappear after refresh or
+            redeploy. Add <code className="text-amber-50">SUPABASE_URL</code> and{' '}
+            <code className="text-amber-50">SUPABASE_SERVICE_ROLE_KEY</code> in Vercel env
+            vars, run <code className="text-amber-50">supabase/schema.sql</code> in the
+            Supabase SQL editor, then redeploy.
+          </div>
+        )}
 
         <div className="mb-6 grid gap-4 lg:grid-cols-2">
           <div className="rounded-2xl border border-dashed border-white/20 bg-[#111111] p-5">

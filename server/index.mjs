@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
@@ -6,16 +7,37 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import { createClient } from '@supabase/supabase-js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const IS_VERCEL = Boolean(process.env.VERCEL);
-const STORE_PATH = IS_VERCEL
-  ? path.join('/tmp', 'certificate-store.json')
-  : path.join(ROOT, 'data', 'store.json');
+const FILE_STORE_PATH = path.join(ROOT, 'data', 'store.json');
 const PORT = Number(process.env.API_PORT || process.env.PORT || 8787);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'RCE_T&P';
 const ADMIN_TOKEN_SECRET = process.env.ADMIN_TOKEN_SECRET || 'race-to-create-admin-secret';
+
+const SUPABASE_URL =
+  process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const SUPABASE_KEY =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.SUPABASE_ANON_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  '';
+
+const supabase =
+  SUPABASE_URL && SUPABASE_KEY
+    ? createClient(SUPABASE_URL, SUPABASE_KEY, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      })
+    : null;
+
+if (IS_VERCEL && !supabase) {
+  console.warn(
+    '[store] SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing. ' +
+      'Approved emails will NOT persist across refreshes on Vercel.',
+  );
+}
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -42,22 +64,12 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-function ensureStore() {
-  const dir = path.dirname(STORE_PATH);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  if (!fs.existsSync(STORE_PATH)) {
-    fs.writeFileSync(
-      STORE_PATH,
-      JSON.stringify({ approvedEmails: [], issued: {} }, null, 2),
-      'utf8',
-    );
-  }
+function emptyStore() {
+  return { approvedEmails: [], issued: {} };
 }
 
-function readStore() {
-  ensureStore();
-  const raw = fs.readFileSync(STORE_PATH, 'utf8');
-  const data = JSON.parse(raw);
+function normalizeStore(data) {
+  if (!data || typeof data !== 'object') return emptyStore();
   return {
     approvedEmails: Array.isArray(data.approvedEmails) ? data.approvedEmails : [],
     issued:
@@ -67,11 +79,128 @@ function readStore() {
   };
 }
 
-function writeStore(store) {
-  ensureStore();
-  const tmp = `${STORE_PATH}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(store, null, 2), 'utf8');
-  fs.renameSync(tmp, STORE_PATH);
+function storageKind() {
+  if (supabase) return 'supabase';
+  if (IS_VERCEL) return 'ephemeral-tmp';
+  return 'local-file';
+}
+
+function ensureFileStore() {
+  const dir = path.dirname(FILE_STORE_PATH);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  if (!fs.existsSync(FILE_STORE_PATH)) {
+    fs.writeFileSync(FILE_STORE_PATH, JSON.stringify(emptyStore(), null, 2), 'utf8');
+  }
+}
+
+async function readStoreFromSupabase() {
+  const [{ data: approved, error: approvedError }, { data: issuedRows, error: issuedError }] =
+    await Promise.all([
+      supabase.from('approved_emails').select('email').order('email', { ascending: true }),
+      supabase.from('issued_certificates').select('email, full_name, issued_at'),
+    ]);
+
+  if (approvedError) throw approvedError;
+  if (issuedError) throw issuedError;
+
+  const issued = {};
+  for (const row of issuedRows || []) {
+    issued[row.email] = {
+      fullName: row.full_name,
+      email: row.email,
+      issuedAt: row.issued_at,
+    };
+  }
+
+  return {
+    approvedEmails: (approved || []).map((row) => row.email),
+    issued,
+  };
+}
+
+async function writeStoreToSupabase(store) {
+  const payload = normalizeStore(store);
+  const emails = payload.approvedEmails;
+
+  const { data: existingRows, error: existingError } = await supabase
+    .from('approved_emails')
+    .select('email');
+  if (existingError) throw existingError;
+
+  const existing = new Set((existingRows || []).map((row) => row.email));
+  const next = new Set(emails);
+
+  const toInsert = emails.filter((email) => !existing.has(email)).map((email) => ({ email }));
+  const toDelete = [...existing].filter((email) => !next.has(email));
+
+  if (toDelete.length) {
+    const { error } = await supabase.from('approved_emails').delete().in('email', toDelete);
+    if (error) throw error;
+  }
+
+  if (toInsert.length) {
+    const { error } = await supabase.from('approved_emails').upsert(toInsert, {
+      onConflict: 'email',
+      ignoreDuplicates: true,
+    });
+    if (error) throw error;
+  }
+
+  const issuedEntries = Object.entries(payload.issued);
+  if (issuedEntries.length) {
+    const rows = issuedEntries.map(([email, value]) => ({
+      email,
+      full_name: value.fullName,
+      issued_at: value.issuedAt || new Date().toISOString(),
+    }));
+    const { error } = await supabase.from('issued_certificates').upsert(rows, {
+      onConflict: 'email',
+    });
+    if (error) throw error;
+  }
+}
+
+async function readStore() {
+  if (supabase) return readStoreFromSupabase();
+
+  const storePath = IS_VERCEL
+    ? path.join('/tmp', 'certificate-store.json')
+    : FILE_STORE_PATH;
+
+  if (!IS_VERCEL) ensureFileStore();
+  else {
+    const dir = path.dirname(storePath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    if (!fs.existsSync(storePath)) {
+      fs.writeFileSync(storePath, JSON.stringify(emptyStore(), null, 2), 'utf8');
+    }
+  }
+
+  const raw = fs.readFileSync(storePath, 'utf8');
+  return normalizeStore(JSON.parse(raw));
+}
+
+async function writeStore(store) {
+  const payload = normalizeStore(store);
+
+  if (supabase) {
+    await writeStoreToSupabase(payload);
+    return;
+  }
+
+  const storePath = IS_VERCEL
+    ? path.join('/tmp', 'certificate-store.json')
+    : FILE_STORE_PATH;
+
+  if (!IS_VERCEL) ensureFileStore();
+  else {
+    const dir = path.dirname(storePath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  }
+
+  const tmp = `${storePath}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(payload, null, 2), 'utf8');
+  fs.renameSync(tmp, storePath);
 }
 
 function makeAdminToken() {
@@ -115,7 +244,10 @@ function requireAdmin(req, res, next) {
 }
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true });
+  res.json({
+    ok: true,
+    storage: storageKind(),
+  });
 });
 
 app.post('/api/admin/login', (req, res) => {
@@ -132,26 +264,40 @@ app.post('/api/admin/login', (req, res) => {
   });
 });
 
-app.get('/api/admin/stats', requireAdmin, (_req, res) => {
-  const store = readStore();
-  const issuedCount = Object.keys(store.issued).length;
-  res.json({
-    success: true,
-    data: {
-      approved: store.approvedEmails.length,
-      issued: issuedCount,
-      remaining: Math.max(0, store.approvedEmails.length - issuedCount),
-      emails: store.approvedEmails.map((email) => ({
-        email,
-        issued: Boolean(store.issued[email]),
-        fullName: store.issued[email]?.fullName || null,
-        issuedAt: store.issued[email]?.issuedAt || null,
-      })),
-    },
-  });
+app.get('/api/admin/stats', requireAdmin, async (_req, res) => {
+  try {
+    const store = await readStore();
+    const issuedCount = Object.keys(store.issued).length;
+    res.json({
+      success: true,
+      data: {
+        approved: store.approvedEmails.length,
+        issued: issuedCount,
+        remaining: Math.max(0, store.approvedEmails.length - issuedCount),
+        storage: storageKind(),
+        emails: store.approvedEmails.map((email) => ({
+          email,
+          issued: Boolean(store.issued[email]),
+          fullName: store.issued[email]?.fullName || null,
+          issuedAt: store.issued[email]?.issuedAt || null,
+        })),
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'store_error',
+        message:
+          err?.message ||
+          'Could not load email list. Check Supabase tables and service role key.',
+      },
+    });
+  }
 });
 
-app.post('/api/admin/emails/upload', requireAdmin, upload.single('file'), (req, res) => {
+app.post('/api/admin/emails/upload', requireAdmin, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({
@@ -185,7 +331,7 @@ app.post('/api/admin/emails/upload', requireAdmin, upload.single('file'), (req, 
         .filter((v) => v !== 'email');
     }
 
-    const store = readStore();
+    const store = await readStore();
     const existing = new Set(store.approvedEmails);
     let imported = 0;
     let duplicates = 0;
@@ -211,7 +357,7 @@ app.post('/api/admin/emails/upload', requireAdmin, upload.single('file'), (req, 
     }
 
     store.approvedEmails = Array.from(existing).sort();
-    writeStore(store);
+    await writeStore(store);
 
     return res.json({
       success: true,
@@ -227,39 +373,53 @@ app.post('/api/admin/emails/upload', requireAdmin, upload.single('file'), (req, 
     console.error(err);
     return res.status(500).json({
       success: false,
-      error: { code: 'import_failed', message: 'Could not import emails.' },
+      error: {
+        code: 'import_failed',
+        message: err?.message || 'Could not import emails.',
+      },
     });
   }
 });
 
-app.post('/api/admin/emails', requireAdmin, (req, res) => {
-  const email = normalizeEmail(req.body?.email);
-  if (!isValidEmail(email)) {
-    return res.status(400).json({
+app.post('/api/admin/emails', requireAdmin, async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'invalid_email', message: 'Enter a valid email address.' },
+      });
+    }
+
+    const store = await readStore();
+    if (store.approvedEmails.includes(email)) {
+      return res.status(409).json({
+        success: false,
+        error: { code: 'duplicate', message: 'Email is already on the approved list.' },
+      });
+    }
+
+    store.approvedEmails.push(email);
+    store.approvedEmails.sort();
+    await writeStore(store);
+
+    return res.status(201).json({
+      success: true,
+      data: { email },
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({
       success: false,
-      error: { code: 'invalid_email', message: 'Enter a valid email address.' },
+      error: {
+        code: 'store_error',
+        message: err?.message || 'Could not save email.',
+      },
     });
   }
-
-  const store = readStore();
-  if (store.approvedEmails.includes(email)) {
-    return res.status(409).json({
-      success: false,
-      error: { code: 'duplicate', message: 'Email is already on the approved list.' },
-    });
-  }
-
-  store.approvedEmails.push(email);
-  store.approvedEmails.sort();
-  writeStore(store);
-
-  return res.status(201).json({
-    success: true,
-    data: { email },
-  });
 });
 
-app.post('/api/certificates/issue', (req, res) => {
+app.post('/api/certificates/issue', async (req, res) => {
   try {
     const email = normalizeEmail(req.body?.email);
     const fullName = normalizeName(req.body?.fullName);
@@ -277,7 +437,7 @@ app.post('/api/certificates/issue', (req, res) => {
       });
     }
 
-    const store = readStore();
+    const store = await readStore();
 
     if (!store.approvedEmails.includes(email)) {
       return res.status(403).json({
@@ -307,7 +467,7 @@ app.post('/api/certificates/issue', (req, res) => {
       email,
       issuedAt: new Date().toISOString(),
     };
-    writeStore(store);
+    await writeStore(store);
 
     return res.json({
       success: true,
@@ -326,7 +486,6 @@ app.post('/api/certificates/issue', (req, res) => {
   }
 });
 
-// Local / Node-host production: serve the Vite build from the same process.
 const distDir = path.join(ROOT, 'dist');
 if (!IS_VERCEL && fs.existsSync(distDir)) {
   app.use(express.static(distDir));
@@ -335,12 +494,12 @@ if (!IS_VERCEL && fs.existsSync(distDir)) {
   });
 }
 
-ensureStore();
-
 if (!IS_VERCEL) {
+  ensureFileStore();
   app.listen(PORT, () => {
     console.log(`Certificate API running on http://localhost:${PORT}`);
     console.log(`Admin login ready (password from ADMIN_PASSWORD / default)`);
+    console.log(`Storage: ${storageKind()}`);
   });
 }
 
